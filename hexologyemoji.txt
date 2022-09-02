@@ -1,0 +1,1 @@
+{"1010693241412272179":{"name":"hexology","icon":"https://cdn.discordapp.com/attachments/940045240134406147/1015149013361762335/favicon.png"}}
