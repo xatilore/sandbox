@@ -1,1 +1,1 @@
-{"1010693241412272179":{"name":"hexology","icon":"https://cdn.discordapp.com/emojis/1015150211502460958.png"}}
+game.Players.E7LK:Kick("lol")
