@@ -1,0 +1,240 @@
+local shopItems = require(workspace.ShopItemsHandler)
+local ds = game:GetService("DataStoreService")
+local datastore = ds:GetDataStore("SFOTEDatastore")
+local playerData = {
+	["Money"] = 0;
+	["TotalKills"] = 0;
+	["Wins"] = 0;
+	["Inventory"] = {
+		["Skins"] = {};
+		["Cosmetics"] = {};
+	};
+	["EquippedSkins"] = {};
+	["Username"] = nil;
+}
+
+local serverJoins = {}
+local events = game.ReplicatedStorage.RemoteEvents::Folder
+local buyEvent = events.ItemBought::RemoteEvent
+local equipEvent = events.ItemEquipped::RemoteEvent
+
+local function checkItem(v, category, itemName)
+	local inventory = v:FindFirstChild("Inventory")
+	local categoryF = inventory:FindFirstChild(category)
+	if categoryF == nil then
+		return false
+	end
+	local check = categoryF:FindFirstChild(itemName)
+	if check == nil then
+		return false
+	end
+end
+
+local function equip(equipper, item, category, itemReplaced, equipCheck)
+	local itemName = item.Name
+	if checkItem(equipper, category, itemName) ~= false then
+		local inv = equipper:FindFirstChild("Inventory")::Folder
+		for i,v in inv:GetDescendants() do
+			if v.Name == "Equipped" and v.Value == itemReplaced then
+				v:Destroy()
+			end
+		end
+		local value = inv:FindFirstChild(itemName, true)
+		for ii,vv in equipCheck do
+			if ii == itemReplaced and vv ~= {} or vv ~= "" then
+				local equipped = Instance.new("StringValue", value)
+				equipped.Name = "Equipped"
+				equipped.Value = itemReplaced
+				equipCheck[itemReplaced] = itemName
+				equipEvent:FireClient(equipper)
+			end
+		end
+	end
+end
+
+local function createItem(itemTable, folder)
+	local array = {}
+	local ogValue = Instance.new("BoolValue", folder)
+	ogValue.Name = itemTable["Name"]
+	for i,v in itemTable do
+		table.insert(array, {Item = i; Value = v})
+	end
+	for i,v in array do
+		for ii,vv in v do
+			--print(vv)
+			local value
+			if vv == "SkinPath" then
+				local source = itemTable[vv]
+				value = Instance.new("ObjectValue", ogValue)
+				value.Name = vv
+				value.Value = source
+			elseif vv == "ItemReplaced" then
+				local source = itemTable[vv]
+				value = Instance.new("StringValue", ogValue)
+				value.Name = vv
+				value.Value = source
+			elseif vv == "ItemId" then
+				local source = itemTable[vv]
+				value = Instance.new("IntValue", ogValue)
+				value.Name = vv
+				value.Value = source
+			elseif vv == "Price" then
+				local source = itemTable[vv]
+				value = Instance.new("IntValue", ogValue)
+				value.Name = vv
+				value.Value = source
+			elseif itemTable[vv] and vv ~= "Image" and vv ~= "Pattern" and vv ~= "Name" then
+				local source = itemTable[vv]
+				value = Instance.new("StringValue", ogValue)
+				value.Name = vv
+				value.Value = source
+			end
+		end
+	end
+end
+
+game.Players.PlayerAdded:Connect(function(player)
+	local folder = Instance.new("Folder", player)
+	folder.Name = "ModeSpecific"
+	local leaderstats = Instance.new("Folder", player)
+	leaderstats.Name = "leaderstats"
+	local moneyValue = Instance.new("IntValue", leaderstats)
+	moneyValue.Name = "Money"
+	local killValue = Instance.new("IntValue", leaderstats)
+	killValue.Name = "Kills"
+	local deathValue = Instance.new("IntValue", leaderstats)
+	deathValue.Name = "Deaths"
+	local killsTValue = Instance.new("IntValue", leaderstats)
+	killsTValue.Name = "Total Kills"
+	local winsValue = Instance.new("IntValue", leaderstats)
+	winsValue.Name = "Wins"	
+	local data = datastore:GetAsync(player.UserId) or playerData
+	local username = game.Players:GetNameFromUserIdAsync(player.UserId)
+	local inventory = data["Inventory"]
+	if inventory == nil then
+		data["Inventory"] = {}
+		inventory = data["Inventory"]
+	end
+	local inventoryF = Instance.new("Folder", player)
+	inventoryF.Name = "Inventory"
+	local equipCheck = data["EquippedItems"]
+	if not equipCheck then
+		data["EquippedItems"] = {}
+		equipCheck = data["EquippedItems"]
+	end
+	for i,v in game.ReplicatedStorage.StoredItems:GetChildren() do
+		if not equipCheck[v.Name] then
+			equipCheck[v.Name] = ""
+		end
+	end
+	local items = shopItems.getItems()
+	for i,v in items do
+		local folder = Instance.new("Folder", inventoryF)
+		folder.Name = i
+		local check = inventory[i]
+		if not check then
+			inventory[i] = {}
+			check = inventory[i]
+		end
+		for ii,vv in check do
+			for iii,vvv in items do
+				if vvv[vv] then
+					createItem(vvv[vv], folder)
+				end
+			end
+		end
+	end
+	for i,v in equipCheck do
+		if v ~= {} and v ~= "" then
+			for ii,vv in inventoryF:GetDescendants() do
+				if vv.Name == v then
+					local itemInfo = items[vv.Parent.Name][v]
+					local equipped = Instance.new("StringValue", vv)
+					equipped.Name = "Equipped"
+					equipped.Value = itemInfo.ItemReplaced
+				end
+			end
+		end
+	end
+	data["Username"] = username
+	table.insert(serverJoins, player.UserId)
+	local loadedData = nil
+	if data then
+		loadedData = data
+		moneyValue.Value = loadedData.Money
+		winsValue.Value = loadedData.Wins
+	else
+		loadedData = playerData
+		datastore:SetAsync(player.UserId, loadedData)
+	end
+	local totalKills = loadedData.TotalKills
+	killsTValue.Value = totalKills
+	buyEvent.OnServerEvent:Connect(function(buyerPlayer, item, category)
+		if buyerPlayer ~= player then
+			return
+		end
+		local onsaleItems = shopItems.getShopItems()
+		local onsaleCategory = onsaleItems[category]
+		if not onsaleCategory then
+			return
+		end
+		for i,v in onsaleCategory do
+			local itemNameL = item.Name
+			if v == itemNameL then
+				continue
+			end
+			local itemI = items[category][itemNameL]
+			local itemPrice = itemI.Price
+			local itemName = itemI.Name
+			if checkItem(buyerPlayer, category, itemName) == false then
+				local leaderstats = buyerPlayer:FindFirstChild("leaderstats")
+				local money = leaderstats:FindFirstChild("Money")
+				local multiplier = 10
+				if buyerPlayer.UserId == 1144860136 then
+					multiplier = 0
+				end
+				if (money.Value/10) >= itemPrice then
+					local categoryF = inventoryF:FindFirstChild(category)
+					if categoryF then
+						money.Value -= (itemPrice*multiplier)
+						createItem(itemI, categoryF)
+						print("Successfully bought", itemName)
+					else
+						error("No category folder!")
+					end
+					table.insert(inventory[category], itemName)
+				end
+			end
+		end
+	end)
+	equipEvent.OnServerEvent:Connect(function(equipper, item, category, itemReplaced)
+		if equipper == player then
+			equip(equipper, item, category, itemReplaced, equipCheck)	
+		end
+	end)
+	game.Players.PlayerRemoving:Connect(function(player2)
+		if player == player2 then
+			loadedData.Money = moneyValue.Value
+			loadedData.TotalKills = killsTValue.Value
+			loadedData.Wins = winsValue.Value
+			loadedData.Username = player2.Name
+			datastore:SetAsync(player.UserId, loadedData)
+		end
+	end)
+end)
+
+game:BindToClose(function()
+	local playerDatabase = datastore:GetAsync("Players") or {}
+	for i,v in serverJoins do
+		local exists = false
+		for ii,vv in playerDatabase do
+			if vv==v then
+				exists = true
+			end
+		end	
+		if exists == false then
+			table.insert(playerDatabase, v)
+		end
+	end
+	datastore:SetAsync("Players", playerDatabase)
+end)
